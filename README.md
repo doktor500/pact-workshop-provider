@@ -1,46 +1,63 @@
-### Pre-Requirements
+### Provider Step 3 (Working with a PACT broker)
 
-- Fork this github repository into your account (You will find a "fork" icon on the top right corner)
-- Clone the forked repository that exists in **your github account** into your local machine
+#### Verifying contracts with the pact-broker
 
-### Requirements
+In the `pact-workshop-provider` directory add `gem "pact_broker-client"` gem to the `Gemfile`, the file should look like:
 
-- Ruby 2.3+ (It is already installed if you are using Mac OS X).
+```ruby
+source 'https://rubygems.org'
 
-### Provider Step 0 (Setup)
+gem 'rake'
+gem 'sinatra'
 
-#### Ruby
+group :development, :test do
+  gem 'pact'
+  gem 'pact_broker-client'
+  gem 'rspec'
+  gem 'rspec_junit_formatter'
+end
+```
 
-Check your ruby version with `ruby --version`
+In the `pact-workshop-provider` directory execute `bundle install`
 
-If you need to install ruby follow the instructions on [rvm.io](https://rvm.io/rvm/install)
+Also in the `pact-workshop-provider` directory update the `pact_helper.rb` file with the following content in order to verify pacts in the broker.
 
-#### Bundler
+```ruby
+require 'pact/provider/rspec'
 
-Install bundler 1.17.2 if you don't have it already installed
+PUBLISH_VERIFICATION_RESULTS = ENV["PUBLISH_VERIFICATION_RESULTS"]
+PACT_BROKER_BASE_URL         = ENV["PACT_BROKER_BASE_URL"] || "http://localhost:8000"
+PACT_BROKER_TOKEN            = ENV["PACT_BROKER_TOKEN"]
+CONSUMER_VERSION_TAG         = ENV["CONSUMER_VERSION_TAG"]
 
-`sudo gem install bundler -v 1.17.2`
+git_commit = `git rev-parse HEAD`.strip
+git_branch = `git rev-parse --abbrev-ref HEAD`.strip
 
-Verify that you have the right version by running `bundler --version`
+Pact.service_provider "PaymentService" do
+  app_version git_commit
+  app_version_tags [git_branch]
+  publish_verification_results PUBLISH_VERIFICATION_RESULTS
 
-If you have more recent versions of bundler, unistall them with `gem uninstall bundler` until the most up to date and default version of bundler is 1.17.2
+  honours_pacts_from_pact_broker do
+    pact_broker_base_url PACT_BROKER_BASE_URL, {token: PACT_BROKER_TOKEN}
+    if (CONSUMER_VERSION_TAG) then
+      consumer_version_tags [CONSUMER_VERSION_TAG]
+    end
+  end
+end
 
-### Install dependencies
+Pact.provider_states_for "PaymentServiceClient" do
+  provider_state "a black listed payment method" do
+    set_up do
+      invalid_payment_method = "9999999999999999"
+      PaymentMethodRepository.instance.black_list(invalid_payment_method)
+    end
+  end
+end
+```
 
-- Navigate to the `pact-workshop-provider` directory and execute `bundle install`
+Now run `rake pact:verify`. You should see all tests passing. When we run this verification, we are using the contract that the consumer published to the broker.
 
-### Run the tests
+If you run `PUBLISH_VERIFICATION_RESULTS=true rake pact:verify` and you navigate to your broker URL, you should see the contract verified.
 
-- Execute `rspec`
-
-Get familiarised with the code
-
-![System diagram](resources/system-diagram.png "System diagram")
-
-There are two microservices in this system. A `consumer` and a `provider` (this repository).
-
-The "provider" is a PaymentService that validates if a credit card number is valid in the context of that system.
-
-The "consumer" only makes requests to PaymentService to verify payment methods.
-
-Navigate to the [Consumer](https://github.com/doktor500/pact-workshop-consumer/) repository and follow the instructions in the **Consumer's** readme file
+In the `pact-workshop-consumer` directory run `git clean -df && git checkout . && git checkout consumer-step4` to continue with **Part II** of this workshop.
