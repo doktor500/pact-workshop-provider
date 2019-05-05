@@ -1,0 +1,177 @@
+version: 2
+
+jobs:
+  build:
+    working_directory: /tmp/project/
+    docker:
+      - image: circleci/ruby:2.6.3
+
+    steps:
+      - checkout
+
+      - restore_cache:
+          key: circlev2-{{ checksum "Gemfile.lock" }}
+
+      - run:
+          name: Install dependencies
+          command: bundle check --path=vendor/bundle || bundle install --path=vendor/bundle --jobs=4 --retry=3
+
+      - save_cache:
+          key: circlev2-{{ checksum "Gemfile.lock" }}
+          paths:
+            - vendor/bundle
+
+      - run:
+          name: Set git tag
+          command: |
+            echo `git tag -l --points-at HEAD` >> current-tag
+
+      - run:
+          name: Move cloned repository files to workspace
+          command: mkdir workspace && mv `ls -A | grep -v "workspace"` ./workspace
+
+      - persist_to_workspace:
+          root: /tmp/project/
+          paths:
+            - workspace
+
+  test:
+    working_directory: /tmp/project/workspace
+    docker:
+      - image: circleci/ruby:2.6.3
+
+    steps:
+      - attach_workspace:
+          at: /tmp/project
+
+      - restore_cache:
+          key: circlev2-{{ checksum "Gemfile.lock" }}
+
+      - run:
+          name: Install dependencies
+          command: bundle check --path=vendor/bundle || bundle install --path=vendor/bundle --jobs=4 --retry=3
+
+      - save_cache:
+          key: circlev2-{{ checksum "Gemfile.lock" }}
+          paths:
+            - vendor/bundle
+
+      - run:
+          name: Run tests
+          command: |
+            mkdir -p /tmp/project/workspace/test-results
+            TEST_FILES="$(circleci tests glob "spec/**/*_spec.rb" | circleci tests split --split-by=timings)"
+
+            bundle exec rspec \
+              --format progress \
+              --format RspecJunitFormatter \
+              --out /tmp/project/workspace/test-results/rspec.xml \
+              --format progress \
+              $TEST_FILES
+
+      - store_test_results:
+          path: /tmp/project/workspace/test-results
+
+      - store_artifacts:
+          path: /tmp/project/workspace/test-results
+          destination: test-results
+
+      - run:
+          name: Verify contracts
+          command: |
+            export GIT_TAG=`cat current-tag`
+            [[ $GIT_TAG == "first-deployment" ]] || PUBLISH_VERIFICATION_RESULTS=true CONSUMER_VERSION_TAG=production \
+              rake pact:verify
+
+      - run:
+          name: Check if deployment can happen
+          command: |
+            export GIT_TAG=`cat current-tag`
+            [[ $GIT_TAG == "first-deployment" ]] || bundle exec pact-broker can-i-deploy \
+                --pacticipant ${PACT_PARTICIPANT} \
+                --broker-base-url ${PACT_BROKER_BASE_URL} \
+                --version ${CIRCLE_SHA1} \
+                --to production
+
+  deploy:
+    working_directory: /tmp/project/workspace
+    docker:
+      - image: circleci/ruby:2.6.3
+
+    steps:
+      - attach_workspace:
+          at: /tmp/project
+
+      - restore_cache:
+          key: circlev2-{{ checksum "Gemfile.lock" }}
+
+      - run:
+          name: Install dependencies
+          command: bundle check --path=vendor/bundle || bundle install --path=vendor/bundle --jobs=4 --retry=3
+
+      - save_cache:
+          key: circlev2-{{ checksum "Gemfile.lock" }}
+          paths:
+            - vendor/bundle
+
+      - run:
+          name: Check if deployment can happen
+          command: |
+            export GIT_TAG=`cat current-tag`
+            [[ $GIT_TAG == "first-deployment" ]] || bundle exec pact-broker can-i-deploy \
+                --pacticipant ${PACT_PARTICIPANT} \
+                --broker-base-url ${PACT_BROKER_BASE_URL} \
+                --version ${CIRCLE_SHA1} \
+                --to production
+
+      - run:
+          name: Deploy to production
+          command: |
+            git push https://heroku:${HEROKU_API_KEY}@git.heroku.com/${HEROKU_APP_NAME}.git master
+
+            bundle exec pact-broker create-version-tag \
+              --pacticipant ${PACT_PARTICIPANT} \
+              --broker-base-url ${PACT_BROKER_BASE_URL} \
+              --version ${CIRCLE_SHA1} \
+              --tag production
+
+  verify:
+    working_directory: /tmp/project/workspace
+    docker:
+      - image: circleci/ruby:2.6.3
+
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /tmp/project
+
+      - run:
+          name: Install dependencies
+          command: bundle check --path=vendor/bundle || bundle install --path=vendor/bundle --jobs=4 --retry=3
+
+      - run:
+          name: Publish verification results
+          command: |
+            export GIT_TAG=`cat current-tag`
+            [[ $GIT_TAG == "first-deployment" ]] || PUBLISH_VERIFICATION_RESULTS=true rake pact:verify
+
+workflows:
+  version: 2
+  pipeline:
+    jobs:
+      - build
+      - test:
+          requires:
+            - build
+      - deploy:
+          requires:
+            - test
+          filters:
+            branches:
+              only: master
+      - verify:
+          requires:
+            - deploy
+          filters:
+            branches:
+              only: master

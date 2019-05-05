@@ -1,46 +1,60 @@
-### Pre-Requirements
+### Provider Step 7 (Introduce incompatible changes with consumers in production)
 
-- Fork this github repository into your account (You will find a "fork" icon on the top right corner)
-- Clone the forked repository that exists in **your github account** into your local machine
+Now let's see what it would happen if we want to change the API in the provider so that it returns responses that contain "accepted/rejected" status values instead of "valid/invalid".
 
-### Requirements
+Start changing the `payment_method_validator_spec.rb` file so it looks like:
 
-- Ruby 2.3+ (It is already installed if you are using Mac OS X).
+```ruby
+require "payment_method_repository"
+require "payment_method_validator"
 
-### Provider Step 0 (Setup)
+RSpec.describe PaymentMethodValidator do
+  let(:payment_method_repository) { PaymentMethodRepository.instance }
+  let(:payment_method_validator) { PaymentMethodValidator.new }
 
-#### Ruby
+  before(:each) do
+    payment_method_repository.reset
+  end
 
-Check your ruby version with `ruby --version`
+  it "validates valid payment methods" do
+    expect(payment_method_validator.validate("1234 1234 1234 1234")).to eq (:accepted)
+    expect(payment_method_validator.validate("1111 2222 3333 4444")).to eq (:accepted)
+    expect(payment_method_validator.validate("1111 2222 3333 444")).to eq (:accepted)
+  end
 
-If you need to install ruby follow the instructions on [rvm.io](https://rvm.io/rvm/install)
+  it "validates invalid payment methods" do
+    expect(payment_method_validator.validate("1111 2222 3333")).to eq (:rejected)
+    expect(payment_method_validator.validate("1111 2222 3333 444A")).to eq (:rejected)
+    expect(payment_method_validator.validate("")).to eq (:rejected)
+    expect(payment_method_validator.validate(nil)).to eq (:rejected)
+  end
 
-#### Bundler
+  it "validates a fraudulent payment method" do
+    payment_method = "9999 9999 9999 9999"
+    payment_method_repository.black_list(payment_method)
 
-Install bundler 1.17.2 if you don't have it already installed
+    expect(payment_method_validator.validate(payment_method)).to eq (:fraud)
+  end
+end
+```
 
-`sudo gem install bundler -v 1.17.2`
+Run the tests with `rspec`, the test should fail, modify `validate` method in the `payment_method_validator.rb` file so it looks like:
 
-Verify that you have the right version by running `bundler --version`
+```ruby
+def validate(payment_method)
+  return :fraud if @payment_method_repository.is_black_listed?(payment_method)
+  if is_valid?(sanitize(payment_method)) then :accepted else :rejected end
+end
+```
 
-If you have more recent versions of bundler, unistall them with `gem uninstall bundler` until the most up to date and default version of bundler is 1.17.2
+Run the tests again with `rspec`, it should be green now.
 
-### Install dependencies
+Create a new commit that includes all the changes, push them to GitHub and see what happens.
 
-- Navigate to the `pact-workshop-provider` directory and execute `bundle install`
+The feature branch build should fail because the `can-i-deploy` step should tell you that this branch is not compatible with the current consumers deployed in production.
 
-### Run the tests
+If you want to make this change in the API, you can implement two different versions of the API that work at the same time. V1 will continue using "valid/invalid" values while V2 will use "accepted/rejected".
 
-- Execute `rspec`
+At this stage, we can deploy the provider to production, and start the migration of consumers to the provider's V2 API. Once all of the consumers are using V2, you can safely deprecate V1 of this API, because you will know that there are no consumers using it.
 
-Get familiarised with the code
-
-![System diagram](resources/system-diagram.png "System diagram")
-
-There are two microservices in this system. A `consumer` and a `provider` (this repository).
-
-The "provider" is a PaymentService that validates if a credit card number is valid in the context of that system.
-
-The "consumer" only makes requests to PaymentService to verify payment methods.
-
-Navigate to the [Consumer](https://github.com/doktor500/pact-workshop-consumer/) repository and follow the instructions in the **Consumer's** readme file
+We will leave this exercise to you so that you can explore the advantages of this setup.
