@@ -1,8 +1,16 @@
 require 'pact/provider/rspec'
 
+PUBLISH_VERIFICATION_RESULTS = ENV["PUBLISH_VERIFICATION_RESULTS"]
+PACT_BROKER_BASE_URL         = ENV["PACT_BROKER_BASE_URL"] || "http://localhost:8000"
+PACT_BROKER_TOKEN            = ENV["PACT_BROKER_TOKEN"]
+
 Pact.service_provider "PaymentService" do
-  honours_pact_with 'PaymentServiceClient' do
-    pact_uri '../pact-workshop-consumer/spec/pacts/paymentserviceclient-paymentservice.json'
+  app_version `git rev-parse HEAD`.strip
+  app_version_tags [`git rev-parse --abbrev-ref HEAD`.strip]
+  publish_verification_results PUBLISH_VERIFICATION_RESULTS
+
+  honours_pacts_from_pact_broker do
+    pact_broker_base_url PACT_BROKER_BASE_URL, {token: PACT_BROKER_TOKEN}
   end
 end
 
