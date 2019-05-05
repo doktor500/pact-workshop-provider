@@ -150,4 +150,91 @@ end
 
 Now run `rake pact:verify`. You should see all tests passing. Navigate to `localhost:8000`, you should see the contract been verified.
 
-In the `pact-workshop-consumer` run `git clean -df && git checkout . && git checkout consumer-step4`, also in the `pact-workshop-provider` run `git clean -df && git checkout . && git checkout provider-step4` to see the branches with all of this changes
+In the `pact-workshop-consumer` run `git clean -df && git checkout . && git checkout consumer-step4`, also in the `pact-workshop-provider` run `git clean -df && git checkout . && git checkout provider-step4` and follow the instructions in the **Consumers's** readme file
+
+### Provider Step 4 (Setting up CD)
+
+In the `pact-workshop-provider` directory run `mkdir .circleci` and `touch .circleci/config.yml` to create the necessary configuration for circle-ci to work.
+
+The content of the `config.yml` file should look like:
+
+```yaml
+version: 2
+
+jobs:
+  test:
+    docker:
+      - image: circleci/ruby:2.6.3
+
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            gem install bundler -v 2.0.1
+            bundle update --bundler
+            bundle install --jobs=4 --retry=3 --path vendor/bundle
+
+      - run:
+          name: Run tests
+          command: |
+            mkdir -p /tmp/test-results
+            TEST_FILES="$(circleci tests glob "spec/**/*_spec.rb" | circleci tests split --split-by=timings)"
+
+            bundle exec rspec \
+              --format progress \
+              --format RspecJunitFormatter \
+              --out /tmp/test-results/rspec.xml \
+              --format progress \
+              $TEST_FILES
+
+      - store_test_results:
+          path: /tmp/test-results
+
+      - store_artifacts:
+          path: /tmp/test-results
+          destination: test-results
+
+      - run:
+          name: Verify contracts
+          command: rake pact:verify
+
+  deploy:
+    docker:
+      - image: circleci/ruby:2.6.3
+
+    steps:
+      - checkout
+      - run:
+          name: Check if deployment can happen
+          command: |
+            pact-broker can-i-deploy \
+              --pacticipant ${PACT_PARTICIPANT} \
+              --broker-base-url ${PACT_BROKER_BASE_URL} \
+              --latest --to production
+
+      - run:
+          name: Deploy
+          command: |
+            echo "Deploying"
+
+            pact-broker create-version-tag \
+              --pacticipant ${PACT_PARTICIPANT} \
+              --broker-base-url ${PACT_BROKER_BASE_URL} \
+              --version ${CIRCLE_SHA1} \
+              --tag production
+
+      - run:
+          name: Publish verification results
+          command: PUBLISH_VERIFICATION_RESULTS=true rake pact:verify
+
+workflows:
+  version: 2
+  test-deploy:
+    jobs:
+      - test
+      - deploy:
+          filters:
+            branches:
+              only: master
+```
