@@ -1,46 +1,32 @@
-### Pre-Requirements
+### Provider Step 2 (Using provider state)
 
-- Fork this github repository into your account (You will find a "fork" icon on the top right corner)
-- Clone the forked repository that exists in **your github account** into your local machine
+In the `pact-workshop-provider` directory run again `rake pact:verify` and see how the new contract test added by the consumer is failing.
 
-### Requirements
+In order to define the necessary state in the provider side that is needed to make a test like this to pass, PACT introduces the concept of "provider states".
 
-- Ruby 2.3+ (It is already installed if you are using Mac OS X).
+Go to the `spec/pact_helper.rb` file and change it to look like this:
 
-### Provider Step 0 (Setup)
+```ruby
+require 'pact/provider/rspec'
 
-#### Ruby
+Pact.service_provider "PaymentService" do
+  honours_pact_with 'PaymentServiceClient' do
+    pact_uri '../pact-workshop-consumer/spec/pacts/paymentserviceclient-paymentservice.json'
+  end
+end
 
-Check your ruby version with `ruby --version`
+Pact.provider_states_for "PaymentServiceClient" do
+  provider_state "a black listed payment method" do
+    set_up do
+      invalid_payment_method = "9999999999999999"
+      PaymentMethodRepository.instance.black_list(invalid_payment_method)
+    end
+  end
+end
+```
 
-If you need to install ruby follow the instructions on [rvm.io](https://rvm.io/rvm/install)
+A new provider state has been defined for "PaymentServiceClient", take into account that different provider states can be defined for different consumers.
 
-#### Bundler
+Run again `rake pact:verify` and see all the tests passing.
 
-Install bundler 1.17.2 if you don't have it already installed
-
-`sudo gem install bundler -v 1.17.2`
-
-Verify that you have the right version by running `bundler --version`
-
-If you have more recent versions of bundler, unistall them with `gem uninstall bundler` until the most up to date and default version of bundler is 1.17.2
-
-### Install dependencies
-
-- Navigate to the `pact-workshop-provider` directory and execute `bundle install`
-
-### Run the tests
-
-- Execute `rspec`
-
-Get familiarised with the code
-
-![System diagram](resources/system-diagram.png "System diagram")
-
-There are two microservices in this system. A `consumer` and a `provider` (this repository).
-
-The "provider" is a PaymentService that validates if a credit card number is valid in the context of that system.
-
-The "consumer" only makes requests to PaymentService to verify payment methods.
-
-Navigate to the [Consumer](https://github.com/doktor500/pact-workshop-consumer/) repository and follow the instructions in the **Consumer's** readme file
+When the tests are green, in the `pact-workshop-consumer` directory run `git clean -df && git checkout . && git checkout consumer-step3`, and also clone the [Broker](https://github.com/doktor500/pact-workshop-broker/) repository and follow the instructions in the **Broker's** readme file
