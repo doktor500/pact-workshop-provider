@@ -1,46 +1,33 @@
-### Pre-Requirements
+### Provider Step 5 (Deploy)
 
-- Fork this github repository into your account (You will find a "fork" icon on the top right corner)
-- Clone the forked repository that exists in **your github account** into your local machine
+At this stage, we are ready to deploy our provider API to heroku via circleci.
 
-### Requirements
+This is the first deployment and we will need to bypass some verification steps on CD. Since this is the first time we are deploying the provider to production we know there aren't any consumers using this API, so there is no need to verify if the deployment can happen. This is the only step in where we won't raise a pull request.
 
-- Ruby 2.3+ (It is already installed if you are using Mac OS X).
+Run the following commands and in the `pact-workshop-provider` directory:
 
-### Provider Step 0 (Setup)
+```bash
+git checkout master && git checkout master && git merge -X theirs --allow-unrelated-histories provider-step5
+git tag -a first-deployment -m first-deployment
+git push origin --tags && git push --force origin master
+```
 
-#### Ruby
+Go to circleci and see how the different CD steps are executed. You should see 4 CD steps: `build`, `test`, `deploy`, and `verify`. Wait until all the steps have completed successfully.
 
-Check your ruby version with `ruby --version`
+Once all the steps have completed successfully, execute the following curl request in your terminal.
 
-If you need to install ruby follow the instructions on [rvm.io](https://rvm.io/rvm/install)
+```bash
+curl --header "Content-Type: application/json" https://pact-provider-$GITHUB_USER.herokuapp.com/validate-payment-method/1234123412341234
+```
 
-#### Bundler
+It might take a while for the first request but you should see a 200 HTTP status code and a response with the following JSON body
 
-Install bundler 1.17.2 if you don't have it already installed
+```json
+  {
+    "status": "valid"
+  }
+```
 
-`sudo gem install bundler -v 1.17.2`
+Congratulations, your provider API is deployed to production and ready to be used by any consumer interested in your API.
 
-Verify that you have the right version by running `bundler --version`
-
-If you have more recent versions of bundler, unistall them with `gem uninstall bundler` until the most up to date and default version of bundler is 1.17.2
-
-### Install dependencies
-
-- Navigate to the `pact-workshop-provider` directory and execute `bundle install`
-
-### Run the tests
-
-- Execute `rspec`
-
-Get familiarised with the code
-
-![System diagram](resources/system-diagram.png "System diagram")
-
-There are two microservices in this system. A `consumer` and a `provider` (this repository).
-
-The "provider" is a PaymentService that validates if a credit card number is valid in the context of that system.
-
-The "consumer" only makes requests to PaymentService to verify payment methods.
-
-Navigate to the [Consumer](https://github.com/doktor500/pact-workshop-consumer/) repository and follow the instructions in the **Consumer's** readme file
+Navigate to the directory in where you checked out `pact-workshop-consumer`, run `git clean -df && git checkout . && git checkout consumer-step5` if you haven't already done so and follow the instructions in the **Consumers's** readme file
