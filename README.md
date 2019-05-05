@@ -358,3 +358,29 @@ The third job name `verify` depends on the `deploy` job and it is only executed 
   - Executes the `rake pact:verify` task publishing the verification results to the broker
 
 In the `pact-workshop-consumer` run `git clean -df && git checkout . && git checkout consumer-step4`, also in the `pact-workshop-provider` run `git clean -df && git checkout . && git checkout provider-step4` and follow the instructions in the **Provider's** readme file
+
+### Provider Step 5 (Deploy)
+
+At this stage we are ready to deploy our provider API through circleci to heroku.
+
+The `provider-step5` branch in this repository is tagged with a `first-deployment` tag so it will bypass some verification steps on CD. Since this is the first time we are deploying the provider to production we know there aren't any consumers using this API, so there is no need to verify if the deployment can happen.
+
+Go to you `pact-workshop-provider` project on github and create a pull request for the `provider-step5` branch,  merge it and see the CD steps running on circleci for the master branch. Once all the builds are completed, the provider API should have been deployed to production and you should be able to verify it by executing an HTTP request to it.
+
+Replace $YOUR_GITHUB_USER with yout github user name in the following snippet and execute it in your terminal
+
+```bash
+  curl --header "Content-Type: application/json" https://pact-provider-$YOUR_GITHUB_USER.herokuapp.com/validate-payment-method/1234123412341234
+```
+
+It might take a while for the first request, but you should see a 200 response with the following JSON body
+
+```json
+{
+  "status": "valid"
+}
+```
+
+Congratulations, your provider API is deployed to production and ready to be used by any consumer interested in your API.
+
+Navigate to the directory in where you checked out `pact-workshop-consumer`, run `git clean -df && git checkout . && git checkout consumer-step5` if you haven't already done so and follow the instructions in the **Consumers's** readme file
