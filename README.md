@@ -168,4 +168,193 @@ end
 
 Now run `rake pact:verify`. You should see all tests passing. Navigate to `localhost:8000`, you should see the contract been verified.
 
-In the `pact-workshop-consumer` run `git clean -df && git checkout . && git checkout consumer-step4`, also in the `pact-workshop-provider` run `git clean -df && git checkout . && git checkout provider-step4` to see the branches with all of this changes
+In the `pact-workshop-consumer` run `git clean -df && git checkout . && git checkout consumer-step4`, also in the `pact-workshop-provider` run `git clean -df && git checkout . && git checkout provider-step4` and follow the instructions in the **Consumers's** readme file
+
+### Provider Step 4 (Setting up CD)
+
+#### Create heroku provider app
+
+Create a heroku app by executing `heroku create pact-provider-$YOUR_GITHUB_USER` replacing `$YOUR_GITHUB_USER` with your github user name. This is the heroku app name that will be used to create the provider app URL, so we need a unique identifier to avoid collisions.
+
+The app URL will look like `https://pact-provider-$YOUR_GITHUB_USER.herokuapp.com/`
+
+#### Create heroku configuration file
+
+In the `pact-workshop-provider` directory run `touch Procfile` to create the configuration file for heroku to be able to run the app
+
+The content of the `Procfile` file should look like:
+
+```
+web: bundle exec rackup config.ru -p $PORT
+```
+
+#### Confgiure circleci environment variables
+
+Now, let's setup the environment variables need it to deploy the provider application. Click on the "WORKFLOWS" icon in the left hand side menu bar, and click on the settings icon for the `pact-workshop-provider` project.
+
+Click on the "Environment variables" link.
+
+We need to add 5 environment variables:
+
+  - HEROKU_API_KEY
+  - HEROKU_APP_NAME
+  - PACT_BROKER_BASE_URL
+  - PACT_BROKER_TOKEN
+  - PACT_PARTICIPANT
+
+Click on the "Add variables" button and add them one by one.
+
+Use the `HEROKU_API_KEY` that you created in previous steps, and set the `HEROKU_APP_NAME` to `pact-provider-$YOUR_GITHUB_USER` replacing `$YOUR_GITHUB_USER` with your github user name in the same way as before.
+
+If you followed the steps availabe in the [pact-workshop-broker](https://github.com/doktor500/pact-workshop-broker) repository, you can get the `PACT_BROKER_BASE_URL` and `PACT_BROKER_TOKEN` by running
+
+```bash
+  echo $PACT_BROKER_BASE_URL
+  echo $PACT_BROKER_TOKEN
+```
+
+The `PACT_PARTICIPANT` environment variable value should be set to `PaymentService`
+
+#### Create configuration files for circleci
+
+Now, let's create a YAML file to configure circleci.
+
+In the `pact-workshop-provider` directory run `mkdir .circleci` and `touch .circleci/config.yml` to create the circle-ci configuration file.
+
+The content of the `config.yml` file should look like:
+
+```yaml
+version: 2
+
+jobs:
+  build:
+    docker:
+      - image: circleci/ruby:2.6.3
+
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            gem install bundler -v 2.0.1
+            bundle update --bundler
+            bundle install --jobs=4 --retry=3 --path vendor/bundle
+
+      - run:
+          name: Run tests
+          command: |
+            mkdir -p /tmp/test-results
+            TEST_FILES="$(circleci tests glob "spec/**/*_spec.rb" | circleci tests split --split-by=timings)"
+
+            bundle exec rspec \
+              --format progress \
+              --format RspecJunitFormatter \
+              --out /tmp/test-results/rspec.xml \
+              --format progress \
+              $TEST_FILES
+
+      - store_test_results:
+          path: /tmp/test-results
+
+      - store_artifacts:
+          path: /tmp/test-results
+          destination: test-results
+
+      - run:
+          name: Verify contracts
+          command: |
+            [[ `git describe --tags` == "first-deployment" ]] || rake pact:verify
+
+  deploy:
+    docker:
+      - image: circleci/ruby:2.6.3
+
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            gem install bundler -v 2.0.1
+            bundle update --bundler
+            bundle install --jobs=4 --retry=3 --path vendor/bundle
+
+      - run:
+          name: Check if deployment can happen
+          command: |
+            [[ `git describe --tags` == "first-deployment" ]] || bundle exec pact-broker can-i-deploy \
+                --pacticipant ${PACT_PARTICIPANT} \
+                --broker-base-url ${PACT_BROKER_BASE_URL} \
+                --latest --to production
+
+      - run:
+          name: Deploy to production
+          command: |
+            git push https://heroku:${HEROKU_API_KEY}@git.heroku.com/${HEROKU_APP_NAME}.git master
+
+            bundle exec pact-broker create-version-tag \
+              --pacticipant ${PACT_PARTICIPANT} \
+              --broker-base-url ${PACT_BROKER_BASE_URL} \
+              --version ${CIRCLE_SHA1} \
+              --tag production
+
+  verify:
+    docker:
+      - image: circleci/ruby:2.6.3
+
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            gem install bundler -v 2.0.1
+            bundle update --bundler
+            bundle install --jobs=4 --retry=3 --path vendor/bundle
+
+      - run:
+          name: Publish verification results
+          command: |
+            [[ `git describe --tags` == "first-deployment" ]] || PUBLISH_VERIFICATION_RESULTS=true rake pact:verify
+
+workflows:
+  version: 2
+  pipeline:
+    jobs:
+      - build
+      - deploy:
+          requires:
+            - build
+          filters:
+            branches:
+              only: master
+      - verify:
+          requires:
+            - deploy
+          filters:
+            branches:
+              only: master
+```
+
+Take a look the circleci config file. You will see that there is a workflow composed by three different jobs.
+
+The first job named `build` performs the following actions:
+
+  - Checkouts the code
+  - Installs the project dependencies
+  - Runs the test and stores the test results
+  - Executes the `rake pact:verify` task without publishing the verification results to the broker
+  - Checks if the branch can be deployed using the `can-i-deploy` command
+
+The second job named `deploy` depends on the `build` job and it is only executed in master branch, it performs the following actions:
+
+  - Checkouts the code
+  - Installs the project dependencies
+  - Checks if the deployment to production can happen
+  - If the deployment can happen, it deploys and updates the `production` tag in the broker
+
+The third job name `verify` depends on the `deploy` job and it is only executed in master branch, it performs the following actions:
+
+  - Checkouts the code
+  - Installs the project dependencies
+  - Executes the `rake pact:verify` task publishing the verification results to the broker
+
+In the `pact-workshop-consumer` run `git clean -df && git checkout . && git checkout consumer-step4`, also in the `pact-workshop-provider` run `git clean -df && git checkout . && git checkout provider-step4` and follow the instructions in the **Provider's** readme file
