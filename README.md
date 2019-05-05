@@ -1,46 +1,92 @@
-### Pre-Requirements
+### Provider Step 6 (Implement and deploy a new feature)
 
-- Fork this github repository into your account (You will find a "fork" icon on the top right corner)
-- Clone the forked repository that exists in **your github account** into your local machine
+In previous steps, the consumer implemented in a feature branch a new feature that it is not yet supported by the provider. In this step, we are going to implement the necessary changes in the provider to support the feature and we are going to deploy it to production, so the consumer can deploy the feature branch as soon as the latest version of the provider is released.
 
-### Requirements
+We want now to support credit card numbers that have length 15. So let's start by adding a new test case that exercises this new behavior.
 
-- Ruby 2.3+ (It is already installed if you are using Mac OS X).
+Change the `payment_method_validator_spec.rb` file so it looks like:
 
-### Provider Step 0 (Setup)
+```ruby
+require "payment_method_repository"
+require "payment_method_validator"
 
-#### Ruby
+RSpec.describe PaymentMethodValidator do
+  let(:payment_method_repository) { PaymentMethodRepository.instance }
+  let(:payment_method_validator) { PaymentMethodValidator.new }
 
-Check your ruby version with `ruby --version`
+  before(:each) do
+    payment_method_repository.reset
+  end
 
-If you need to install ruby follow the instructions on [rvm.io](https://rvm.io/rvm/install)
+  it "validates valid payment methods" do
+    expect(payment_method_validator.validate("1234 1234 1234 1234")).to eq (:valid)
+    expect(payment_method_validator.validate("1111 2222 3333 4444")).to eq (:valid)
+    expect(payment_method_validator.validate("1111 2222 3333 444")).to eq (:valid)
+  end
 
-#### Bundler
+  it "validates invalid payment methods" do
+    expect(payment_method_validator.validate("1111 2222 3333")).to eq (:invalid)
+    expect(payment_method_validator.validate("1111 2222 3333 444A")).to eq (:invalid)
+    expect(payment_method_validator.validate("")).to eq (:invalid)
+    expect(payment_method_validator.validate(nil)).to eq (:invalid)
+  end
 
-Install bundler 1.17.2 if you don't have it already installed
+  it "validates a fraudulent payment method" do
+    payment_method = "9999 9999 9999 9999"
+    payment_method_repository.black_list(payment_method)
 
-`sudo gem install bundler -v 1.17.2`
+    expect(payment_method_validator.validate(payment_method)).to eq (:fraud)
+  end
+end
+```
 
-Verify that you have the right version by running `bundler --version`
+As you can see, we added the third test case for valid payment methods in where the credit card number has length 15, if you run the test with `rspec`, you should see it failing, since the current implementation does not support this case yet.
 
-If you have more recent versions of bundler, unistall them with `gem uninstall bundler` until the most up to date and default version of bundler is 1.17.2
+If we edit the `payment_method_validator.rb` file and we add an implementation like the following one, it will make all the tests green.
 
-### Install dependencies
+```ruby
+require_relative "./payment_method_repository"
 
-- Navigate to the `pact-workshop-provider` directory and execute `bundle install`
+class PaymentMethodValidator
+  MIN_PAYMENT_METHOD_LENGTH = 15
+  MAX_PAYMENT_METHOD_LENGTH = 16
 
-### Run the tests
+  def initialize(payment_method_repository = PaymentMethodRepository.instance)
+    @payment_method_repository = payment_method_repository
+  end
 
-- Execute `rspec`
+  def validate(payment_method)
+    return :fraud if @payment_method_repository.is_black_listed?(payment_method)
+    if is_valid?(sanitize(payment_method)) then :valid else :invalid end
+  end
 
-Get familiarised with the code
+  private
 
-![System diagram](resources/system-diagram.png "System diagram")
+  def is_valid?(payment_method)
+    valid_length = payment_method&.length&.between?(MIN_PAYMENT_METHOD_LENGTH, MAX_PAYMENT_METHOD_LENGTH)
+    valid_format = /\d{#{payment_method&.length}}/.match(payment_method)
+    valid_length && valid_format
+  end
 
-There are two microservices in this system. A `consumer` and a `provider` (this repository).
+  def sanitize(payment_method)
+    payment_method&.split&.join
+  end
+end
+```
 
-The "provider" is a PaymentService that validates if a credit card number is valid in the context of that system.
+Open a pull request for this branch after a while it will become green.
 
-The "consumer" only makes requests to PaymentService to verify payment methods.
+These are the steps that will happen when you open the PR.
 
-Navigate to the [Consumer](https://github.com/doktor500/pact-workshop-consumer/) repository and follow the instructions in the **Consumer's** readme file
+- The unit tests will run
+- The verification step is run against the contracts tagged with the `production` tag for all the consumers (we currently have only one consumer)
+- Since this version of the provider is compatible with all the consumers tagged with the `production` tag, the can-i-deploy check succeeds.
+
+Merge the PR to master branch.
+
+- This version of the provider will be deployed to production and this version of the contract is tagged with the `production` tag.
+- The verification step is run and the results are published to the broker.
+- The hook for the feature branch in the consumer side is triggered, and at this stage.
+- At this stage the consumer knows that the provider that supports the new feature has been released to production
+
+Navigate to the directory in where you checked out `pact-workshop-consumer`, run `git clean -df && git checkout . && git checkout consumer-step7` if you haven't already done so and follow the instructions in the **Consumers's** readme file
