@@ -145,4 +145,59 @@ end
 
 Now run `rake pact:verify`. You should see all tests passing. Navigate to `localhost:8000`, you should see the contract been verified.
 
-In the `pact-workshop-consumer` run `git clean -df && git checkout . && git checkout consumer-step4`, also in the `pact-workshop-provider` run `git clean -df && git checkout . && git checkout provider-step4` to see the branches with all of this changes
+In the `pact-workshop-consumer` run `git clean -df && git checkout . && git checkout consumer-step4`, also in the `pact-workshop-provider` run `git clean -df && git checkout . && git checkout provider-step4` and follow the instructions in the **Consumers's** readme file
+
+### Provider Step 4 (Setting up CD)
+
+In the `pact-workshop-provider` directory run `mkdir .circle-ci` and `touch .circle-ci/config.yml` to create the necessary configuration for circle-ci to work.
+
+The content of the `config.yml` file should look like:
+
+```yaml
+version: 2
+
+jobs:
+  provider:
+    docker:
+      - image: circleci/ruby:2.4.1-node-browsers
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - run:
+          name: Install provider dependencies
+          command: |
+            cd server
+            bundle install --jobs=4 --retry=3 --path vendor/bundle
+      - run:
+          name: Run provider tests
+          command: |
+            cd server
+            mkdir -p /tmp/test-results
+            TEST_FILES="$(circleci tests glob "spec/**/*_spec.rb" | circleci tests split --split-by=timings)"
+
+            bundle exec rspec \
+              --format progress \
+              --format RspecJunitFormatter \
+              --out /tmp/test-results/rspec.xml \
+              --format progress \
+              $TEST_FILES
+      - store_test_results:
+          path: /tmp/test-results
+      - store_artifacts:
+          path: /tmp/test-results
+          destination: test-results
+      - run:
+          name: Verify contracts
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              cd server
+              PUBLISH_VERIFICATION_RESULTS=true rake pact:verify
+            fi
+      - run:
+          name: Deploy provider
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              pact-broker can-i-deploy --pacticipant PaymentService \
+                --broker-base-url http://46.101.49.17:8000/ --latest && echo "Deploying provider"
+            fi
+```

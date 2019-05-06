@@ -1,8 +1,11 @@
 require 'pact/provider/rspec'
 
 Pact.service_provider "PaymentService" do
-  honours_pact_with 'PaymentServiceClient' do
-    pact_uri '../pact-workshop-consumer/spec/pacts/paymentserviceclient-paymentservice.json'
+  app_version '0.0.1'
+  publish_verification_results true
+
+  honours_pacts_from_pact_broker do
+    pact_broker_base_url 'http://localhost:8000'
   end
 end
 
