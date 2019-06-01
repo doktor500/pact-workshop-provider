@@ -12,9 +12,9 @@ RSpec.describe PaymentMethodValidator do
   it "validates payment method" do
     expect(payment_method_validator.validate("1234 1234 1234 1234")).to eq (:valid)
     expect(payment_method_validator.validate("1111 2222 3333 4444")).to eq (:valid)
+    expect(payment_method_validator.validate("1111 2222 3333 4444 5")).to eq (:valid)
 
     expect(payment_method_validator.validate("1111 2222 3333")).to eq (:invalid)
-    expect(payment_method_validator.validate("1111 2222 3333 4444 5")).to eq (:invalid)
     expect(payment_method_validator.validate("1111 2222 3333 444A")).to eq (:invalid)
     expect(payment_method_validator.validate("")).to eq (:invalid)
     expect(payment_method_validator.validate(nil)).to eq (:invalid)
