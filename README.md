@@ -484,6 +484,6 @@ It might take a while for the first request but you should see a 200 HTTP status
 }
 ```
 
-Congratulations, your provider API is deployed to production and ready to be used by any consumer interested in your API
+Congratulations, your provider API is deployed to production and ready to be used by any consumer interested in your API.
 
 Navigate to the directory in where you checked out `pact-workshop-consumer`, run `git clean -df && git checkout . && git checkout consumer-step5` if you haven't already done so and follow the instructions in the **Consumers's** readme file
