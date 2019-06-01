@@ -80,7 +80,17 @@ jobs:
           name: Verify contracts
           command: |
             export GIT_TAG=`cat current-tag`
-            [[ $GIT_TAG == "first-deployment" ]] || rake pact:verify
+            [[ $GIT_TAG == "first-deployment" ]] || PUBLISH_VERIFICATION_RESULTS=true rake pact:verify || true
+
+      - run:
+          name: Check if deployment can happen
+          command: |
+            export GIT_TAG=`cat current-tag`
+            [[ $GIT_TAG == "first-deployment" ]] || bundle exec pact-broker can-i-deploy \
+                --pacticipant ${PACT_PARTICIPANT} \
+                --broker-base-url ${PACT_BROKER_BASE_URL} \
+                --version ${CIRCLE_SHA1} \
+                --to production
 
   deploy:
     working_directory: /tmp/project/workspace
