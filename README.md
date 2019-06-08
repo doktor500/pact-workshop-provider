@@ -20,7 +20,7 @@ end
 
 In the `pact-workshop-provider` directory execute `bundle install`
 
-Also in the `pact-workshop-provider` directory update the `pact_helper.rb` file with the following content in order to verify pacts in the broker.
+Also in the `pact-workshop-provider` directory add the following content to the `pact_helper.rb` file (in addition to its existing content), in order to verify pacts in the broker.
 
 ```ruby
 require 'pact/provider/rspec'
